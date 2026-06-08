@@ -2,8 +2,22 @@ import { useEffect, useState, useRef } from 'react'
 import { api } from '../api'
 
 const MEAL_TYPES = ['ארוחת בוקר', 'ארוחת צהריים', 'ארוחת ערב', 'חטיף']
-
 const EMPTY = { name: '', calories: '', protein: '', carbs: '', fat: '', meal_type: 'ארוחת צהריים' }
+
+function ProgressBar({ label, value, max, unit, color }) {
+  const pct = Math.min(100, Math.round((value / max) * 100))
+  return (
+    <div className="progress-row">
+      <div className="progress-labels">
+        <span className="prog-name">{label}</span>
+        <span className="prog-val">{Math.round(value)} / {max} {unit}</span>
+      </div>
+      <div className="progress-track">
+        <div className="progress-fill" style={{ width: `${pct}%`, background: color }} />
+      </div>
+    </div>
+  )
+}
 
 export default function NutritionPage() {
   const [meals, setMeals] = useState([])
@@ -16,10 +30,7 @@ export default function NutritionPage() {
   useEffect(() => { load() }, [])
 
   async function load() {
-    try {
-      const data = await api.nutrition.getMeals()
-      setMeals(data)
-    } catch {}
+    try { setMeals(await api.nutrition.getMeals()) } catch {}
   }
 
   async function handleSubmit(e) {
@@ -35,12 +46,20 @@ export default function NutritionPage() {
         fat: Number(form.fat) || 0,
       })
       setForm(EMPTY)
+      if (fileRef.current) fileRef.current.value = ''
       load()
     } catch (err) {
       setError(err.message)
     } finally {
       setLoading(false)
     }
+  }
+
+  async function handleDelete(id) {
+    try {
+      await api.nutrition.deleteMeal(id)
+      setMeals(ms => ms.filter(m => m.id !== id))
+    } catch {}
   }
 
   async function handleAnalyze(e) {
@@ -69,37 +88,50 @@ export default function NutritionPage() {
         }
       }
       reader.readAsDataURL(file)
-    } catch (err) {
+    } catch {
       setError('שגיאה בניתוח התמונה')
       setAnalyzing(false)
     }
   }
 
-  const totals = meals.reduce((acc, m) => ({
-    calories: acc.calories + (m.calories || 0),
-    protein: acc.protein + (m.protein || 0),
-  }), { calories: 0, protein: 0 })
+  const totals = meals.reduce(
+    (acc, m) => ({
+      calories: acc.calories + Number(m.calories || 0),
+      protein:  acc.protein  + Number(m.protein  || 0),
+      carbs:    acc.carbs    + Number(m.carbs    || 0),
+    }),
+    { calories: 0, protein: 0, carbs: 0 }
+  )
 
   return (
     <div className="page">
       <div className="page-header">
-        <h2>🥗 תזונה</h2>
+        <div>
+          <h2>🥗 תזונה</h2>
+          <p className="page-subtitle">מעקב ארוחות יומי</p>
+        </div>
         <div className="totals-row">
-          <span className="badge orange">🔥 {totals.calories} קק״ל</span>
-          <span className="badge purple">🥩 {totals.protein}g חלבון</span>
+          <span className="badge orange">🔥 {Math.round(totals.calories)} קק״ל</span>
+          <span className="badge purple">🥩 {Math.round(totals.protein)}g</span>
         </div>
       </div>
 
+      {meals.length > 0 && (
+        <div className="card mb16">
+          <ProgressBar label="קלוריות" value={totals.calories} max={2000} unit="קק״ל" color="#f97316" />
+          <ProgressBar label="חלבון"   value={totals.protein}  max={120}  unit="גרם"  color="#a855f7" />
+          <ProgressBar label="פחמימות" value={totals.carbs}    max={250}  unit="גרם"  color="#22c55e" />
+        </div>
+      )}
+
       <div className="two-col">
         <div className="card">
-          <h3>הוסף ארוחה</h3>
+          <h3>➕ הוסף ארוחה</h3>
           <button
-            type="button"
-            className="btn-secondary mb"
-            onClick={() => fileRef.current?.click()}
-            disabled={analyzing}
+            type="button" className="btn-secondary mb"
+            onClick={() => fileRef.current?.click()} disabled={analyzing}
           >
-            {analyzing ? '🔍 מנתח...' : '📷 נתח תמונה עם AI'}
+            {analyzing ? '🔍 מנתח תמונה...' : '📷 נתח תמונה עם AI'}
           </button>
           <input ref={fileRef} type="file" accept="image/*" onChange={handleAnalyze} style={{ display: 'none' }} />
 
@@ -138,28 +170,33 @@ export default function NutritionPage() {
         </div>
 
         <div className="card">
-          <h3>ארוחות היום</h3>
-          {meals.length === 0
-            ? <p className="empty-state">לא נרשמו ארוחות היום</p>
-            : (
-              <div className="meal-list">
-                {meals.map(m => (
-                  <div key={m.id} className="meal-item">
+          <h3>🍽 ארוחות היום</h3>
+          {meals.length === 0 ? (
+            <div className="empty-state">
+              <span className="empty-icon">🥗</span>
+              <span>לא נרשמו ארוחות היום</span>
+            </div>
+          ) : (
+            <div className="meal-list">
+              {meals.map(m => (
+                <div key={m.id} className="meal-item">
+                  <div className="meal-top">
                     <div className="meal-info">
                       <strong>{m.name}</strong>
                       <span className="meal-type-tag">{m.meal_type}</span>
                     </div>
-                    <div className="meal-macros">
-                      <span>🔥 {m.calories}</span>
-                      <span>🥩 {m.protein}g</span>
-                      <span>🌾 {m.carbs}g</span>
-                      <span>🧈 {m.fat}g</span>
-                    </div>
+                    <button className="btn-danger" onClick={() => handleDelete(m.id)} title="מחק">✕</button>
                   </div>
-                ))}
-              </div>
-            )
-          }
+                  <div className="meal-macros">
+                    <span>🔥 {m.calories}</span>
+                    <span>🥩 {m.protein}g</span>
+                    <span>🌾 {m.carbs}g</span>
+                    <span>🧈 {m.fat}g</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>
