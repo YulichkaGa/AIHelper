@@ -31,7 +31,11 @@ router.post('/chat', auth, async (req, res, next) => {
             messages,
         })
         res.json({ message: response.content[0].text })
-    } catch (err) { next(err) }
+    } catch (err) {
+        if (err.status === 401 || err.status === 403)
+            return res.status(503).json({ message: 'שגיאה בחיבור ל-AI — בדוק את מפתח ה-API' })
+        next(err)
+    }
 })
 
 router.get('/insight', auth, async (req, res, next) => {
@@ -55,7 +59,11 @@ router.get('/insight', auth, async (req, res, next) => {
         })
 
         res.json({ insight: response.content[0].text })
-    } catch (err) { next(err) }
+    } catch (err) {
+        if (err.status === 401 || err.status === 403)
+            return res.status(503).json({ message: 'שגיאה בחיבור ל-AI — בדוק את מפתח ה-API' })
+        next(err)
+    }
 })
 
 module.exports = router
